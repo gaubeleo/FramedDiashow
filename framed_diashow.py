@@ -4,22 +4,27 @@ import os, sys
 from threading import Thread
 
 def preload_img(filename, p):
+	global INDEX
 	global CURRENT_IMG, CURRENT_SCALED_IMG
 	global NEXT_IMG, NEXT_SCALED_IMG
 	global PREVIOUS_IMG, PREVIOUS_SCALED_IMG
+
+	old_index = int(INDEX)
 
 	img = pygame.image.load(os.path.join(PATH, filename))
 	scaled_img = fit_img(img, 0.05)
 
 	if p == -1:
-		PREVIOUS_IMG = img
-		PREVIOUS_SCALED_IMG = scaled_img
+		if INDEX-old_index <= 0:
+			PREVIOUS_IMG = img
+			PREVIOUS_SCALED_IMG = scaled_img
 	elif p == 0:
 		CURRENT_IMG = img
 		CURRENT_SCALED_IMG = scaled_img
 	elif p == 1:
-		NEXT_IMG = img
-		NEXT_SCALED_IMG = scaled_img
+		if INDEX-old_index >= 0:
+			NEXT_IMG = img
+			NEXT_SCALED_IMG = scaled_img
 
 def setup():
 	global WIDTH, HEIGHT
@@ -89,6 +94,7 @@ def update_screen():
 
 
 def main():
+	global INDEX
 	global LIGHTS
 	global FRAME_WIDTH
 
@@ -99,14 +105,13 @@ def main():
 	running = True
 
 	filenames = os.listdir(PATH)
-	index = 0
 
-	NEXT_THREAD = Thread(target = preload_img, args = (filenames[index+1], 1))
+	NEXT_THREAD = Thread(target = preload_img, args = (filenames[INDEX+1], 1))
 	NEXT_THREAD.start()
-	PREVIOUS_THREAD = Thread(target = preload_img, args = (filenames[index-1], -1))
+	PREVIOUS_THREAD = Thread(target = preload_img, args = (filenames[INDEX-1], -1))
 	PREVIOUS_THREAD.start()
 
-	preload_img(filenames[index], 0)
+	preload_img(filenames[INDEX], 0)
 
 	#NEXT_THREAD.join()
 	#PREVIOUS_THREAD.join()
@@ -139,9 +144,9 @@ def main():
 				elif e.key == K_LEFT:
 					PREVIOUS_THREAD.join()
 
-					index -= 1
-					if index < 0:
-						index = len(filenames) - 1
+					INDEX -= 1
+					if INDEX < 0:
+						INDEX = len(filenames) - 1
 
 
 					#NEXTThread needs to be killed!!!
@@ -153,16 +158,16 @@ def main():
 					PREVIOUS_IMG = None
 					PREVIOUS_SCALED_IMG = None
 					
-					PREVIOUS_THREAD = Thread(target = preload_img, args = (filenames[(index-1)%len(filenames)], -1))
+					PREVIOUS_THREAD = Thread(target = preload_img, args = (filenames[(INDEX-1)%len(filenames)], -1))
 					PREVIOUS_THREAD.start()
 					
 					update_screen()
 				elif e.key == K_RIGHT:
 					NEXT_THREAD.join()
 
-					index += 1
-					if index >= len(filenames):
-						index = 0
+					INDEX += 1
+					if INDEX >= len(filenames):
+						INDEX = 0
 
 					#PreviousThread needs to be killed!!!
 
@@ -173,7 +178,7 @@ def main():
 					NEXT_IMG = None
 					NEXT_SCALED_IMG = None
 					
-					NEXT_THREAD = Thread(target = preload_img, args = (filenames[(index+1)%len(filenames)], 1))
+					NEXT_THREAD = Thread(target = preload_img, args = (filenames[(INDEX+1)%len(filenames)], 1))
 					NEXT_THREAD.start()
 					
 					update_screen()
@@ -192,9 +197,10 @@ CAPTION = "Skye"
 #PATH = r"E:\images\best"
 PATH = r"C:\Users\Leo\Pictures\Skye"
 
-LIGHTS = False
-FRAME_WIDTH = 3
+INDEX = 0
 
+LIGHTS = False
+FRAME_WIDTH = 2
 
 WIDTH = 0
 HEIGHT = 0
