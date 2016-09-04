@@ -1,43 +1,169 @@
 import pygame
 from pygame import *
+import win32gui, win32con
+
 import os, sys
 from threading import Thread
 
-def preload_img(filename, p):
-	global INDEX
-	global CURRENT_IMG, CURRENT_SCALED_IMG
-	global NEXT_IMG, NEXT_SCALED_IMG
-	global PREVIOUS_IMG, PREVIOUS_SCALED_IMG
+class Slideshow:
+	def __init__(self, width, height, zoom=0.9, bgc=2, fc=4, preload_count=2):
+		self.index = 0
 
-	old_index = int(INDEX)
+		self.width = width
+		self.height = height
 
-	img = pygame.image.load(os.path.join(PATH, filename))
-	scaled_img = fit_img(img, 0.05)
+		self.zoom = zoom
+		self.background_color = bgc
+		self.frame_color = fc
+		self.preload_count = 5
 
-	if p == -1:
-		if INDEX-old_index <= 0:
-			PREVIOUS_IMG = img
-			PREVIOUS_SCALED_IMG = scaled_img
-	elif p == 0:
-		CURRENT_IMG = img
-		CURRENT_SCALED_IMG = scaled_img
-	elif p == 1:
-		if INDEX-old_index >= 0:
-			NEXT_IMG = img
-			NEXT_SCALED_IMG = scaled_img
+		self.running = False
 
-def setup():
-	global WIDTH, HEIGHT
+	def load(self, path, caption=None):
+		self.path = path
+		self.caption = caption
 
+		if not caption:
+			self.caption = os.path.rsplit(path, 1)
+
+		print "Loading gallery '%s' from path '%s'"%(caption, path)
+
+		self.filenames = [f for f in os.listdir(path) if f[-4:].upper() == ".JPG"]
+		self.filecount = len(self.filenames)
+
+		print "This gallery contains %i images"%(self.filecount)
+		
+		self.images = {}
+		self.scaled_images = {}
+
+		for filename in self.filenames:
+			self.images[filename] = None
+			self.scaled_images[filename] = None
+
+		self.preload()
+
+	def preload(self):
+		for i in range(-self.preload_count, self.preload_count+1, 1):
+			Thread(target = self.preload_img, args = ((self.index + i)%self.filecount,))
+
+	def preload_img(self, index, scale=True):
+		filename = self.filenames[index]
+
+		img = pygame.image.load(os.path.join(PATH, filename))
+		if scale:
+			scaled_img = fit_img(filename)
+
+		if abs(index-self.index) <= preload_count:
+			self.images[filename] = img
+			if scale:
+				self.scaled_images[filename] = scaled_img
+
+	def fit_img_to_zoom(self, img):
+		width, height = img.get_size()
+
+		if width/(self.width*self.zoom) >= height/(self.height*self.zoom):
+			scaled_width = self.width*self.zoom
+			scaled_height = height*scaled_width/width
+		else:
+			scaled_height = self.height*self.zoom
+			scaled_width = width*scaled_height/height
+
+		return pygame.transform.scale(img, (int(scaled_width), int(scaled_height)))
+
+
+	def run(self):
+		self.running = True
+
+		self.update_screen()
+
+		while running:
+			for e in pygame.event.get():
+				if e.type is QUIT: 
+					self.running = False
+				elif e.type is KEYDOWN:
+					if e.key == K_ESCAPE: 
+						self.running = False
+					elif (e.key == K_f and (e.mod & (KMOD_LALT|KMOD_RALT)) != 0):
+						self.screen = self.toggle_fullscreen()
+					elif e.key == K_l:
+						self.background_color += 1
+						if self.background_color >= len(BACKGROUND_COLORS):
+							self.background_color = 0
+						self.update_screen()
+					elif e.key == K_f:
+						self.frame_color += 1
+						if self.frame_color >= len(FRAME_COLORS):
+							self.frame_color = 0
+						self.update_screen()
+
+					elif e.key == 93: # '+' on UX31A
+						FRAME_WIDTH += 1
+						self.update_screen()
+					elif e.key == 47: # '-' on UX31A
+						if FRAME_WIDTH > 0:
+							FRAME_WIDTH -= 1
+							self.update_screen()
+
+					elif e.key == K_LEFT:
+						# free up memory
+						self.images[self.filenames[(self.index+self.preload_count)%self.filecount]]
+
+						self.index -= 1
+						if self.index < 0:
+							self.index = len(filenames) - 1
+
+						# wait for image to be loaded from seperate Thread
+						self.threads[self.filenames[self.index]].join()
+
+						# preload image further to the left
+						self.preload_img(self.index-self.preload_count)
+
+						self.update_screen()
+
+					elif e.key == K_RIGHT:
+						# free up memory
+						self.images[self.filenames[(self.index-self.preload_count)%self.filecount]]
+
+						self.index += 1
+						if self.index >= len(filenames):
+							self.index = 0
+
+						# wait for image to be loaded from seperate Thread
+						self.threads[self.filenames[self.index]].join()
+
+						# preload image further to the left
+						self.preload_img(self.index-self.preload_count)
+
+						self.update_screen()
+
+		cleanup()
+
+
+
+
+def setup_pygame(width, height, caption, fullscreen=False):
 	pygame.init()
 	pygame.display.init()
 
-	resolution = pygame.display.Info()
-	WIDTH = resolution.current_w
-	HEIGHT = resolution.current_h
+	pygame.display.set_caption(cation)
 
-	screen = pygame.display.set_mode((WIDTH, HEIGHT), FULLSCREEN)
-	pygame.display.set_caption(CAPTION)
+	resolution = pygame.display.Info()
+	w = resolution.current_w
+	h = resolution.current_h
+
+	if w != width or h != height:
+		print "Slideshow is not running in optimal resolution!"
+		print "current settings: (%i, %i)"%(width, height)
+		print "optimal settings: (%i, %i)\n"%(w, h)
+
+	if fullscreen:
+		screen = pygame.display.set_mode((width, height), HWSURFACE|DOUBLEBUF|FULLSCREEN)
+	else:
+		screen = pygame.display.set_mode((width, height)) #, RESIZABLE
+
+		hwnd = win32gui.GetForegroundWindow()
+		win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+
 
 def toggle_fullscreen():
     screen = pygame.display.get_surface()
@@ -62,18 +188,6 @@ def toggle_fullscreen():
     
     return screen
 
-def fit_img(img, border_percent):
-	width, height = img.get_size()
-
-	if width/(WIDTH*(1.-border_percent)) > height/(HEIGHT*(1.-border_percent)):
-		scaled_width = WIDTH*(1.-border_percent)
-		scaled_height = height*scaled_width/width
-	else:
-		scaled_height = HEIGHT*(1.-border_percent)
-		scaled_width = width*scaled_height/height
-
-	return pygame.transform.scale(img, (int(scaled_width), int(scaled_height)))
-
 
 def update_screen():
 	screen = pygame.display.get_surface()
@@ -82,109 +196,11 @@ def update_screen():
 	img_x = (WIDTH-w)/2
 	img_y = (HEIGHT-h)/2
 
-	if LIGHTS == True:
-		screen.fill((255, 255, 255))
-		pygame.draw.rect(screen, (0, 0, 0), (img_x-FRAME_WIDTH, img_y-FRAME_WIDTH, w + 2*FRAME_WIDTH, h + 2*FRAME_WIDTH))
-	else:
-		screen.fill((0, 0, 0))
-		pygame.draw.rect(screen, (255, 255, 255), (img_x-FRAME_WIDTH, img_y-FRAME_WIDTH, w + 2*FRAME_WIDTH, h + 2*FRAME_WIDTH))
+	screen.fill(background_color)
+	pygame.draw.rect(screen, frame_color, (img_x-FRAME_WIDTH, img_y-FRAME_WIDTH, w + 2*FRAME_WIDTH, h + 2*FRAME_WIDTH))
 
 	screen.blit(CURRENT_SCALED_IMG, (img_x, img_y))
 	pygame.display.flip()
-
-
-def main():
-	global INDEX
-	global LIGHTS
-	global FRAME_WIDTH
-
-	global CURRENT_IMG, CURRENT_SCALED_IMG
-	global NEXT_IMG, NEXT_SCALED_IMG
-	global PREVIOUS_IMG, PREVIOUS_SCALED_IMG
-
-	running = True
-
-	filenames = os.listdir(PATH)
-
-	NEXT_THREAD = Thread(target = preload_img, args = (filenames[INDEX+1], 1))
-	NEXT_THREAD.start()
-	PREVIOUS_THREAD = Thread(target = preload_img, args = (filenames[INDEX-1], -1))
-	PREVIOUS_THREAD.start()
-
-	preload_img(filenames[INDEX], 0)
-
-	#NEXT_THREAD.join()
-	#PREVIOUS_THREAD.join()
-
-	update_screen()
-
-
-	while running:
-		for e in pygame.event.get():
-			if e.type is QUIT: 
-				running = False
-			elif e.type is KEYDOWN:
-				if e.key == K_ESCAPE: 
-					running = False
-				elif (e.key == K_f and (e.mod & (KMOD_LALT|KMOD_RALT)) != 0):
-					screen = toggle_fullscreen()
-				elif e.key == K_l:
-					if LIGHTS:
-						LIGHTS = False
-					else:
-						LIGHTS = True
-					update_screen()
-				elif e.key == 93:
-					FRAME_WIDTH += 1
-					update_screen()
-				elif e.key == 47:
-					FRAME_WIDTH -= 1
-					FRAME_WIDTH = max(0, FRAME_WIDTH)
-					update_screen()
-				elif e.key == K_LEFT:
-					PREVIOUS_THREAD.join()
-
-					INDEX -= 1
-					if INDEX < 0:
-						INDEX = len(filenames) - 1
-
-
-					#NEXTThread needs to be killed!!!
-
-					NEXT_IMG = CURRENT_IMG
-					NEXT_SCALED_IMG = CURRENT_SCALED_IMG
-					CURRENT_IMG = PREVIOUS_IMG
-					CURRENT_SCALED_IMG = PREVIOUS_SCALED_IMG
-					PREVIOUS_IMG = None
-					PREVIOUS_SCALED_IMG = None
-					
-					PREVIOUS_THREAD = Thread(target = preload_img, args = (filenames[(INDEX-1)%len(filenames)], -1))
-					PREVIOUS_THREAD.start()
-					
-					update_screen()
-				elif e.key == K_RIGHT:
-					NEXT_THREAD.join()
-
-					INDEX += 1
-					if INDEX >= len(filenames):
-						INDEX = 0
-
-					#PreviousThread needs to be killed!!!
-
-					PREVIOUS_IMG = CURRENT_IMG
-					PREVIOUS_SCALED_IMG = CURRENT_SCALED_IMG
-					CURRENT_IMG = NEXT_IMG
-					CURRENT_SCALED_IMG = NEXT_SCALED_IMG
-					NEXT_IMG = None
-					NEXT_SCALED_IMG = None
-					
-					NEXT_THREAD = Thread(target = preload_img, args = (filenames[(INDEX+1)%len(filenames)], 1))
-					NEXT_THREAD.start()
-					
-					update_screen()
-				else:
-					print e.key
-	cleanup()
 
 
 def cleanup():
@@ -193,28 +209,13 @@ def cleanup():
 
 	sys.exit(0)
 
-CAPTION = "Skye"
-#PATH = r"E:\images\best"
-PATH = r"C:\Users\Leo\Pictures\Skye"
 
-INDEX = 0
-
-LIGHTS = False
-FRAME_WIDTH = 2
-
-WIDTH = 0
-HEIGHT = 0
-
-CURRENT_IMG = None
-CURRENT_SCALED_IMG = None
-PREVIOUS_IMG = None
-PREVIOUS_SCALED_IMG = None
-NEXT_IMG = None
-NEXT_SCALED_IMG = None
-
-NEXT_THREAD = None
-PREVIOUS_THREAD = None
+BACKGROUND_COLORS = [(0, 0, 0), (60, 60, 60), (120, 120, 120), (200, 200, 200), (255, 255, 255)]
+FRAME_COLORS = [(0, 0, 0), (60, 60, 60), (120, 120, 120), (200, 200, 200), (255, 255, 255)]
 
 if __name__ == "__main__":
-	setup()
-	main()
+	print "Slideshow - created by Leo Gaube - 2016\n"
+
+	slideshow = Slideshow(1920, 1080)
+	slideshow.load(r"C:\Users\Leo\Pictures\Skye", caption=r"Skye")
+	slideshow.run()
