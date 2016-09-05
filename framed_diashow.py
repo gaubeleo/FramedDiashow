@@ -1,9 +1,9 @@
 import pygame
-from pygame import *
+from pygame.constants import *
 import win32gui, win32con
 
 import os, sys
-from threading import Thread
+from threading import Thread, Timer
 
 class DummyThread:
 	def __init__(self):
@@ -12,13 +12,16 @@ class DummyThread:
 	def join(self):
 		pass
 
+
 class Slideshow:
-	def __init__(self, width, height, fullscreen=True, zoom=0.9, bgc=1, fc=4, fs=3, pc=3):
+	def __init__(self, width=1920, height=1080, fullscreen=False, dur=3, zoom=0.9, bgc=1, fc=4, fs=3, pc=3):
 		self.index = 0
 
 		self.width = width
 		self.height = height
 		self.fullscreen = fullscreen
+		self.play = False
+		self.duration = dur
 
 		self.zoom = zoom
 		self.background_color = bgc
@@ -56,9 +59,9 @@ class Slideshow:
 
 	def preload(self):
 		for i in range(1, self.preload_count+1, 1):
-			self.threads[self.filenames[(self.index + i)%self.file_count]] = Thread(target = self.preload_img, args = ((self.index + i)%self.file_count,))
+			self.threads[self.filenames[(self.index + i)%self.file_count]] = Thread(target=self.preload_img, args=((self.index + i)%self.file_count,))
 			self.threads[self.filenames[(self.index + i)%self.file_count]].start()
-			self.threads[self.filenames[(self.index - i)%self.file_count]] = Thread(target = self.preload_img, args = ((self.index - i)%self.file_count,))
+			self.threads[self.filenames[(self.index - i)%self.file_count]] = Thread(target=self.preload_img, args=((self.index - i)%self.file_count,))
 			self.threads[self.filenames[(self.index - i)%self.file_count]].start()
 
 		self.preload_img(self.index)
@@ -104,6 +107,18 @@ class Slideshow:
 					elif (e.key == K_f and (e.mod & (KMOD_LALT|KMOD_RALT)) != 0):
 						self.toggle_fullscreen()
 
+					elif e.key == K_SPACE:
+						if not self.play:
+							self.play = True
+							if not self.fullscreen:
+								self.toggle_fullscreen()
+							self.play_thread = Timer(self.duration, self.next_img, args=())
+							print dir(self.play_thread)
+							self.play_thread.start()
+						else:
+							self.play = False
+							self.play_thread.cancel()
+
 					elif e.key == K_k:
 						self.background_color -= 1
 						if self.background_color < 0:
@@ -135,48 +150,72 @@ class Slideshow:
 							self.update_screen()
 
 					elif e.key == K_LEFT:
-						# free up memory
-						self.images[self.filenames[(self.index+self.preload_count)%self.file_count]] = None
-						self.scaled_images[self.filenames[(self.index+self.preload_count)%self.file_count]] = None
-						self.threads[self.filenames[(self.index+self.preload_count)%self.file_count]] = None
-
-						self.index -= 1
-						if self.index < 0:
-							self.index = self.file_count - 1
-
-						# wait for image to be loaded from seperate Thread
-						self.threads[self.filenames[self.index]].join()
-
-						# preload image further to the left
-						self.threads[self.filenames[(self.index - self.preload_count)%self.file_count]] = Thread(target = self.preload_img, args = ((self.index - self.preload_count)%self.file_count,))
-						self.threads[self.filenames[(self.index - self.preload_count)%self.file_count]].start()
-
-						self.update_screen()
+						self.previous_img()
 
 					elif e.key == K_RIGHT:
-						# free up memory
-						self.images[self.filenames[(self.index-self.preload_count)%self.file_count]] = None
-						self.scaled_images[self.filenames[(self.index-self.preload_count)%self.file_count]] = None
-						self.threads[self.filenames[(self.index-self.preload_count)%self.file_count]] = None
-
-						self.index += 1
-						if self.index >= self.file_count:
-							self.index = 0
-
-						# wait for image to be loaded from seperate Thread
-						self.threads[self.filenames[self.index]].join()
-
-						# preload image further to the right
-						self.threads[self.filenames[(self.index + self.preload_count)%self.file_count]] = Thread(target = self.preload_img, args = ((self.index + self.preload_count)%self.file_count,))
-						self.threads[self.filenames[(self.index + self.preload_count)%self.file_count]].start()
-
-						self.update_screen()
+						self.next_img()
 
 			self.clock.tick(self.framerate)
 
 		self.cleanup()
 
+	def previous_img(self):
+		# free up memory
+		self.images[self.filenames[(self.index+self.preload_count)%self.file_count]] = None
+		self.scaled_images[self.filenames[(self.index+self.preload_count)%self.file_count]] = None
+		self.threads[self.filenames[(self.index+self.preload_count)%self.file_count]] = None
+
+		self.index -= 1
+		if self.index < 0:
+			self.index = self.file_count - 1
+
+		# wait for image to be loaded from seperate Thread
+		self.threads[self.filenames[self.index]].join()
+
+		# preload image further to the left
+		self.threads[self.filenames[(self.index - self.preload_count)%self.file_count]] = Thread(target = self.preload_img, args = ((self.index - self.preload_count)%self.file_count,))
+		self.threads[self.filenames[(self.index - self.preload_count)%self.file_count]].start()
+
+		self.update_screen()
+
+		if self.play:
+			self.play_thread.cancel()
+			self.play_thread = Timer(self.duration, self.next_img, args=())
+			self.play_thread.start()
+
+	def next_img(self):
+		# free up memory
+		self.images[self.filenames[(self.index-self.preload_count)%self.file_count]] = None
+		self.scaled_images[self.filenames[(self.index-self.preload_count)%self.file_count]] = None
+		self.threads[self.filenames[(self.index-self.preload_count)%self.file_count]] = None
+
+		self.index += 1
+		if self.index >= self.file_count:
+			self.index = 0
+
+		# wait for image to be loaded from seperate Thread
+		self.threads[self.filenames[self.index]].join()
+
+		# preload image further to the right
+		self.threads[self.filenames[(self.index + self.preload_count)%self.file_count]] = Thread(target = self.preload_img, args = ((self.index + self.preload_count)%self.file_count,))
+		self.threads[self.filenames[(self.index + self.preload_count)%self.file_count]].start()
+
+		self.update_screen()
+
+		if self.play:
+			self.play_thread.cancel()
+			self.play_thread = Timer(self.duration, self.next_img, args=())
+			self.play_thread.start()
+
+
 	def setup_pygame(self):
+		# control main loop rounds per second
+		self.clock = pygame.time.Clock()
+
+		# Initialize Music Player
+		#pygame.mixer.init()
+
+		# Initialize Display
 		pygame.init()
 		pygame.display.init()
 
@@ -199,9 +238,8 @@ class Slideshow:
 			hwnd = win32gui.GetForegroundWindow()
 			win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
 
-		# Other pygame functions
-		self.clock = pygame.time.Clock()
-		pygame.key.set_repeat(400)
+		# holding down a key will fire a repeated event after 500ms
+		pygame.key.set_repeat(500)
 
 
 	def toggle_fullscreen(self):
@@ -248,6 +286,7 @@ class Slideshow:
 
 
 	def cleanup(self):
+		pygame.mixer.quit()
 		pygame.display.quit()
 		pygame.quit()
 
